@@ -4,17 +4,20 @@
 #include <LiquidCrystal_I2C.h>
 #include <DHT.h>
 #include <DS1307.h>
+#include <AT24Cxx.h>
 
 // zegar i EEPROM układ Tiny RTC DS1307
 DS1307 clock;
 RTCDateTime dt;
+
+AT24Cxx eep(0x50, 32);
 
 
  // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 2
 #define TEMPERATURE_PRECISION 9
 
-char* Menu[]={"temperatura","wilgotnosc","wentylator","koniec"};
+char* Menu[]={"temperatura     ","wilgotnosc      ","wentylator      ","koniec          "};
 // inicjalizacja DHT 22 czujnik wilgoci
 DHT dht;
 
@@ -29,7 +32,8 @@ DallasTemperature sensors(&oneWire);
 
 // arrays to hold device address
 DeviceAddress tempDeviceAddress;
-int numberOfDevices; // Number of temperature devices found
+DeviceAddress tempDeviceAddressEEPROM[]={0};
+byte numberOfDevices; // Number of temperature devices found
 byte pirPin = 3; //pin czujnika ruchu PIR
 
 // connectors on bottom
@@ -47,6 +51,7 @@ byte pirPin = 3; //pin czujnika ruchu PIR
 //
 
 //VARS
+//byte DaneDS18B20 [][8] ={{0},{0}};
 //the time we give the sensor to calibrate (10-60 secs according to the datasheet)
 byte calibrationTime = 30;        
 
@@ -62,7 +67,7 @@ boolean takeLowTime;
 
 // Timer
 unsigned long TimeLastStart=0 ;
-
+//-------------------------------------------------------------
 void setup(void)
 {
   Serial.begin(9600);
@@ -77,44 +82,8 @@ void setup(void)
     // Set sketch compiling time
     clock.setDateTime(__DATE__, __TIME__);
   }
-
-   // Fill memory
-    // Read a memory
-  char tmp[16];
-  Serial.println("Reading memory");
-  Serial.println();
-  Serial.print("        ");
-
-  for (byte i = 0; i < 16; i++)
-  {
-      sprintf(tmp, "0x%.2X ", i, 2);
-      Serial.print(tmp);
-  }
-
-  Serial.println();
-  Serial.println("---------------------------------------------------------------------------------------");
-
-  for (byte j = 0; j < 4; j++)
-  {
-    sprintf(tmp, " 0x%.2X : ", (j*16), 2);
- 
-    Serial.print(tmp);
- 
-    for (byte i = 0; i < 16; i++)
-    {
-      if ((j*16 + i) > 55)
-      {
-        break;
-      }
-
-      sprintf(tmp, "0x%.2X ", clock.readByte(j*16 + i), 2);
-
-      Serial.print(tmp);
-    }
-
-    Serial.println();
-  }
-  
+  //wyswietlenie czasu 
+  wyswietlenieCzasu();
 
 //---------------------
    pinMode (4,INPUT_PULLUP);// pin 4 dla przycisku podłaczonego do GND
@@ -131,18 +100,10 @@ void setup(void)
    lcd.begin(16,2);                      // initialize the lcd 
    lcd.backlight();
    
-  //wyswietlenie czasu 
-  wyswietlenieCzasu();
+   wyswietlenieTytulu(); 
+    
 
-  //wyswietlenie tytuł
-  lcd.home();
-  
-  lcd.print("Sterownik lazienkowy");
-  lcd.setCursor(0, 1); 
-  lcd.print("v1.0 29.02.2016");
-  delay(2000);
-  lcd.clear();
-  
+ 
   //pinMode(ledPin, OUTPUT);
   digitalWrite(pirPin, LOW);
   lcd.clear();
@@ -151,16 +112,19 @@ void setup(void)
   Serial.println("calibrating sensor ");
   lcd.print("kalibracja PIR");
   
+    //kalibracja czujnika PIR
     for(int i = 0; i < calibrationTime; i++){
       Serial.print(".");
-      lcd.setCursor(i,1);
-      lcd.print(".");
+      lcd.setCursor(0,1);
+      lcd.print(i+1);
+      lcd.print(" z ");
+      lcd.print(calibrationTime);
       delay(1000);
       }
     Serial.println(" done");
     Serial.println("SENSOR ACTIVE");
     delay(50);
-  // start serial port
+  
   
   
   Serial.println("Dallas Temperature IC Control Library Demo");
@@ -179,56 +143,55 @@ void setup(void)
   if (sensors.isParasitePowerMode()) Serial.println("ON");
   else Serial.println("OFF");
   // Loop through each device, print out address
-  for(int i=0;i<numberOfDevices; i++)
+  for(byte i=0;i<numberOfDevices; i++)
   {
     // Search the wire for address
     if(sensors.getAddress(tempDeviceAddress, i))
-  {
-    Serial.print("Found device ");
-    Serial.print(i, DEC);
-    Serial.print(" with address: ");
-    printAddress(tempDeviceAddress);
-    Serial.println();
-    
-    Serial.print("Setting resolution to ");
-    Serial.println(TEMPERATURE_PRECISION, DEC);
-    
-    // set the resolution to TEMPERATURE_PRECISION bit (Each Dallas/Maxim device is capable of several different resolutions)
-    sensors.setResolution(tempDeviceAddress, TEMPERATURE_PRECISION);
-    
-     Serial.print("Resolution actually set to: ");
-    Serial.print(sensors.getResolution(tempDeviceAddress), DEC); 
-    Serial.println();
-  }else{
-    Serial.print("Found ghost device at ");
-    Serial.print(i, DEC);
-    Serial.print(" but could not detect address. Check power and cabling");
-  }
+    {
+      Serial.println("Odczyt termometru z pamięci EEPROM");
+      for(byte temp=0;temp<8;temp++)
+      {
+        //odczytanie z EEPROM adresów DS18B20
+        tempDeviceAddressEEPROM [i][temp]=eep.read((8*i)+(11+temp)+i);
+        Serial.print(tempDeviceAddressEEPROM [i][temp],HEX);
+      }
+      if (strcmp(tempDeviceAddress,tempDeviceAddressEEPROM[i]) == 0)
+      {
+        Serial.println("termometr jest juz zapisany w EEPROM");   
+      }
+      else
+      {
+        Serial.println("Dodawanie nowego termometru");
+        for(byte temp=0;temp<8;temp++)
+        {
+          eep.update((8*i)+(11+temp)+i,tempDeviceAddress[temp]);
+          Serial.println(tempDeviceAddress[temp],HEX);
+        }
+        Serial.println("Dodano nowy termometr do pamieci EEPROM");
+      }
+      Serial.print("Found device ");
+      Serial.print(i, DEC);
+      Serial.print(" with address: ");
+      printAddress(tempDeviceAddress,i);
+      Serial.println();    
+      Serial.print("Setting resolution to ");
+      Serial.println(TEMPERATURE_PRECISION, DEC);    
+      // set the resolution to TEMPERATURE_PRECISION bit (Each Dallas/Maxim device is capable of several different resolutions)
+      sensors.setResolution(tempDeviceAddress, TEMPERATURE_PRECISION);
+      Serial.print("Resolution actually set to: ");
+      Serial.print(sensors.getResolution(tempDeviceAddress), DEC); 
+      Serial.println();
+    }
+    else{
+      Serial.print("Found ghost device at ");
+      Serial.print(i, DEC);
+      Serial.print(" but could not detect address. Check power and cabling");
+    }
   }
   lcd.clear();
 }
 
-// function to print the temperature for a device
-float GetToPrintTemperature(DeviceAddress deviceAddress)
-{
-  // method 1 - slower
-  //Serial.print("Temp C: ");
-  //Serial.print(sensors.getTempC(deviceAddress));
-  //Serial.print(" Temp F: ");
-  //Serial.print(sensors.getTempF(deviceAddress)); // Makes a second call to getTempC and then converts to Fahrenheit
 
-  // method 2 - faster
-  float tempC = sensors.getTempC(deviceAddress);
-  Serial.print("Temp C: ");
-  Serial.println(tempC);
-  //lcd.setCursor(11,0); 
-  //lcd.print(tempC);
-  //Serial.print(" Temp F: ");
-  //lcd.setCursor(10,1); 
-  //lcd.print(tempC);
-  //Serial.println(DallasTemperature::toFahrenheit(tempC)); // Converts tempC to Fahrenheit
-  return tempC;
-}
 
 void loop(void)
 { 
@@ -262,13 +225,50 @@ void loop(void)
   loopPIR();
 }
 
-// function to print a device address
-void printAddress(DeviceAddress deviceAddress)
+// function to print the temperature for a device
+float GetToPrintTemperature(DeviceAddress deviceAddress)
 {
-  for (uint8_t i = 0; i < 8; i++)
+  // method 1 - slower
+  //Serial.print("Temp C: ");
+  //Serial.print(sensors.getTempC(deviceAddress));
+  //Serial.print(" Temp F: ");
+  //Serial.print(sensors.getTempF(deviceAddress)); // Makes a second call to getTempC and then converts to Fahrenheit
+
+  // method 2 - faster
+  float tempC = sensors.getTempC(deviceAddress);
+  Serial.print("Temp C: ");
+  Serial.println(tempC);
+  //lcd.setCursor(11,0); 
+  //lcd.print(tempC);
+  //Serial.print(" Temp F: ");
+  //lcd.setCursor(10,1); 
+  //lcd.print(tempC);
+  //Serial.println(DallasTemperature::toFahrenheit(tempC)); // Converts tempC to Fahrenheit
+  return tempC;
+}
+
+ //wyswietlenie tytuł
+void wyswietlenieTytulu()
+{
+  lcd.home();
+  
+  lcd.print("Sterownik lazienkowy");
+  lcd.setCursor(0, 1); 
+  lcd.print("v1.1 29.02.2016");
+  delay(1000);
+  lcd.clear();
+}  
+// function to print a device address
+void printAddress(DeviceAddress deviceAddress,byte temp)
+{
+  for (byte i = 0; i < 8; i++)
   {
     if (deviceAddress[i] < 16) Serial.print("0");
     Serial.print(deviceAddress[i], HEX);
+   // DaneDS18B20 [temp][i]=deviceAddress[i];
+    //eep.update(11+i,deviceAddress[i]);
+   // Serial.print(eep.read(11+i),HEX);
+    
   }
 }
 
@@ -292,19 +292,7 @@ void odczytDHT()
     Serial.print("\t\t");
   }
 }
-class Przycisk
-{
-  private:
-  unsigned long CzasStartu;
-  byte pin;
-  
-  public:
-  void begin(byte pinButton)
-  {
-    pin=pinButton;
-  }
-  
-};
+
 void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
 {
   if (digitalRead(pinButtom) == LOW) {
@@ -350,7 +338,7 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
     if (digitalRead(pinButtom) == LOW){
       
         delay(160);
-        lcd.clear();
+        //lcd.clear();
         lcd.setCursor(0,0);
         lcd.print(Menu[poziomMenu]);
         Serial.print("MENU:");
@@ -384,17 +372,17 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
         break;
         }
         case 3:{
-        byte temp =  clock.readByte(10);
-        //lcd.clear();
+        byte temp =  eep.read(10);
+        lcd.clear();
         lcd.setCursor(0,0);
         lcd.print(temp);
-        Serial.print("MENU:wartosc3 ");
+        Serial.print("MENU:wilgotnosc ");
         Serial.println(temp);
         byte tempKoniec=0;
         while(tempKoniec<1){
          
           
-            if (digitalRead(pinButtom2) == LOW){
+            if (digitalRead(pinButtom) == LOW){
               delay(250);
               temp++;
               Serial.println(temp);
@@ -402,14 +390,14 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
               lcd.print(temp);
               if(temp>99) temp=0;
             }
-              if (digitalRead(pinButtom) == LOW){
+              if (digitalRead(pinButtom2) == LOW){
                 delay(250);
-                clock.writeByte(10,temp);
+                eep.update(10,temp);
                 Serial.println("zapisano EEPROM");
                 tempKoniec=1;
-                lcd.clear();
+                //lcd.clear();
                 lcd.setCursor(0,0);
-                lcd.print("zapisano");
+                lcd.print("zapisano        ");
                 delay(600);
                 koniec=1;
               }
@@ -420,9 +408,9 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
         }
         
         case 0:{
-          lcd.clear();
+        //lcd.clear();
         lcd.setCursor(0,0);
-        lcd.print("wyjscie");
+        lcd.print("wyjscie         ");
         Serial.print("MENU:koniec");
         koniec=1;
         break;
@@ -493,8 +481,8 @@ void loopPIR()
          Serial.print(millis()/1000);
          Serial.println(" sec"); 
          delay(50);
-         lcd.home();
-         lcd.print("RUCH");
+         //lcd.home();
+         //lcd.print("RUCH");
          digitalWrite(5, LOW);
          }         
          takeLowTime = true;
@@ -521,8 +509,8 @@ void loopPIR()
            digitalWrite(5,HIGH);
            delay(50);
            lcd.noBacklight();
-           lcd.home();
-           lcd.print("    ");
+           //lcd.home();
+           //lcd.print("    ");
            }
            
        }
