@@ -16,8 +16,11 @@ AT24Cxx eep(0x50, 32);
  // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 2
 #define TEMPERATURE_PRECISION 9
+#define pinDHT 6//pin DHT22
+#define pirPin  3 //pin czujnika ruchu PIR
+#define ledPin1 7//pin 
 
-char* Menu[]={"temperatura     ","wilgotnosc      ","wentylator      ","koniec          "};
+char* Menu[]={"temperatura     ","wilgotnosc      ","wentylator      ","czujnik ruchu   ","koniec          "};
 // inicjalizacja DHT 22 czujnik wilgoci
 DHT dht;
 
@@ -34,7 +37,7 @@ DallasTemperature sensors(&oneWire);
 DeviceAddress tempDeviceAddress;
 DeviceAddress tempDeviceAddressEEPROM[]={0};
 byte numberOfDevices; // Number of temperature devices found
-byte pirPin = 3; //pin czujnika ruchu PIR
+
 
 // connectors on bottom
 /*
@@ -60,7 +63,7 @@ long unsigned int lowIn;
 
 //the amount of milliseconds the sensor has to be low 
 //before we assume all motion has stopped
-long unsigned int pause = 5000;  
+long unsigned int pause = 0;  
 
 boolean lockLow = true;
 boolean takeLowTime;  
@@ -73,7 +76,7 @@ void setup(void)
   Serial.begin(9600);
   
    // Initialize DS1307
-  Serial.println("Initialize DS1307");
+  //Serial.println("Initialize DS1307");
   clock.begin();
 
   // If date not set
@@ -94,22 +97,20 @@ void setup(void)
    digitalWrite(5,HIGH);//ustalenie stanu poczatkowego
    digitalWrite(7, HIGH);
    
-   dht.setup(6); // data pin 6
+   dht.setup(pinDHT); // data pin 6
    //Serial.println(dht.getModel());
-   Serial.println("Inicjalizacja wyświetlacxza LCD...");
+   //Serial.println("Inicjalizacja wyświetlacxza LCD...");
    lcd.begin(16,2);                      // initialize the lcd 
    lcd.backlight();
    
    wyswietlenieTytulu(); 
     
-
- 
   //pinMode(ledPin, OUTPUT);
   digitalWrite(pirPin, LOW);
   lcd.clear();
   lcd.home();
   //give the sensor some time to calibrate
-  Serial.println("calibrating sensor ");
+  //Serial.println("calibrating sensor ");
   lcd.print("kalibracja PIR");
   
     //kalibracja czujnika PIR
@@ -121,15 +122,19 @@ void setup(void)
       lcd.print(calibrationTime);
       delay(1000);
       }
-    Serial.println(" done");
-    Serial.println("SENSOR ACTIVE");
+    //Serial.println(" done");
+    //Serial.println("SENSOR ACTIVE");
+    //Serial.print("czas czuwania PIR(milisek):");
+    
+    pause=eep.read(11)*60000;
+    //Serial.println(pause);
     delay(50);
   
   
   
-  Serial.println("Dallas Temperature IC Control Library Demo");
+  //Serial.println("Dallas Temperature IC Control Library Demo");
   // locate devices on the bus
-  Serial.print("Locating devices...");
+  //Serial.print("Locating devices...");
 
   sensors.begin();
   Serial.print("Found ");
@@ -148,11 +153,11 @@ void setup(void)
     // Search the wire for address
     if(sensors.getAddress(tempDeviceAddress, i))
     {
-      Serial.println("Odczyt termometru z pamięci EEPROM");
+      Serial.println("Odczytano adres termometru z pamięci EEPROM");
       for(byte temp=0;temp<8;temp++)
       {
         //odczytanie z EEPROM adresów DS18B20
-        tempDeviceAddressEEPROM [i][temp]=eep.read((8*i)+(11+temp)+i);
+        tempDeviceAddressEEPROM [i][temp]=eep.read((8*i)+(2000+temp)+i);
         Serial.print(tempDeviceAddressEEPROM [i][temp],HEX);
       }
       if (strcmp(tempDeviceAddress,tempDeviceAddressEEPROM[i]) == 0)
@@ -164,7 +169,7 @@ void setup(void)
         Serial.println("Dodawanie nowego termometru");
         for(byte temp=0;temp<8;temp++)
         {
-          eep.update((8*i)+(11+temp)+i,tempDeviceAddress[temp]);
+          eep.update((8*i)+(2000+temp)+i,tempDeviceAddress[temp]);
           Serial.println(tempDeviceAddress[temp],HEX);
         }
         Serial.println("Dodano nowy termometr do pamieci EEPROM");
@@ -298,19 +303,19 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
   if (digitalRead(pinButtom) == LOW) {
     // turn LED on:
     delay(60);
-    Serial.println("Nacisnieto przycisk 1");
+    //Serial.println("Nacisnieto przycisk 1");
     digitalWrite(pinLed, LOW);
   } else {
     delay(60);
     // turn LED off:
-    digitalWrite(pinLed, HIGH);
+    //digitalWrite(pinLed, HIGH);
     
   }
 
   if (digitalRead(pinButtom2) == LOW) {
     // turn LED on:
     delay(60);
-    Serial.println("Nacisnieto przycisk ____2");
+    //Serial.println("Nacisnieto przycisk ____2");
     digitalWrite(pinLed, LOW);
   } else {
     delay(60);
@@ -324,30 +329,39 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
   if ((digitalRead(pinButtom) == LOW) && (digitalRead(pinButtom2) == LOW)){
   
     delay(150);
-    Serial.println("Nacisnieto przycisk ____MENU");
-    lcd.clear();
-    lcd.setCursor(4,0);
-    lcd.print("MENU");
-    //sizeof(*Menu)
-    byte koniec=0;
-    while(koniec<1){
-    delay(350);
-    Serial.println(sizeof(Menu)/sizeof(*Menu));
-    Serial.println(poziomMenu);
+
     
-    if (digitalRead(pinButtom) == LOW){
+    //Serial.println("Nacisnieto przycisk ____MENU");
+    
+    //Jestesmy w menu
+    byte koniec_menu=0; 
+    do{
+     
+    
+      lcd.clear();
+      lcd.setCursor(4,0);
+      lcd.print("MENU");
+      lcd.setCursor(0,1);
+      lcd.print(Menu[poziomMenu]);
+    
+      byte koniec=0;
+      while(koniec<1){
+      delay(350);
+    
+    
+      if (digitalRead(pinButtom) == LOW){
       
         delay(160);
-        //lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print(Menu[poziomMenu]);
-        Serial.print("MENU:");
-        Serial.println(Menu[poziomMenu]);
         
-        if (poziomMenu==3){
+        lcd.setCursor(0,1);
+        lcd.print(Menu[poziomMenu]);
+        //Serial.print("MENU:");
+        //Serial.println(Menu[poziomMenu]);
+        
+        if (poziomMenu==(sizeof(Menu)/sizeof(*Menu))){
           poziomMenu=0;
         }
-        else poziomMenu++;
+        poziomMenu++;
       
       }
       
@@ -355,29 +369,73 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
      if (digitalRead(pinButtom2) == LOW){
       
         delay(160);
-        switch( poziomMenu )
-        {
+        switch( poziomMenu-1 ){
+        
         case 1:{
         lcd.clear();
         lcd.setCursor(0,0);
         lcd.print("wartosc 1");
-        Serial.print("MENU:wartosc1");
+        //Serial.print("MENU:wartosc1");
+        koniec=1;
+        break;
+        }
+        case 3:{ //czujnik PIR
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("ust.czasu czuwania");
+        //Serial.print("MENU:ustawienia PIR");
+        byte temp_min =  eep.read(11);
+        Serial.println(temp_min);
+       // byte temp_sek =  eep.read(12);
+        delay(2000);
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print(temp_min);
+        lcd.setCursor(0,1);
+        lcd.print("min");
+        byte tempKoniec=0;
+        while(tempKoniec<1){
+         
+          
+            if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              temp_min++;
+              //Serial.println(temp_min);
+              lcd.setCursor(0,0);
+              lcd.print(temp_min);
+              
+              
+              if(temp_min>59){
+                temp_min=1;
+                lcd.clear();
+                lcd.setCursor(0,0);
+                lcd.print(temp_min);
+                lcd.setCursor(0,1);
+                lcd.print("min");
+              }
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                eep.update(11,temp_min);
+                //Serial.println("zapisano EEPROM");
+                tempKoniec=1;
+                lcd.setCursor(0,0);
+                lcd.print("zapisano        ");
+                delay(600);
+                koniec=1;
+              }
+           
+          
+         }
         break;
         }
         case 2:{
-          lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print("wartosc 2");
-        Serial.print("MENU:wartosc2");
-        break;
-        }
-        case 3:{
         byte temp =  eep.read(10);
         lcd.clear();
         lcd.setCursor(0,0);
         lcd.print(temp);
-        Serial.print("MENU:wilgotnosc ");
-        Serial.println(temp);
+        //Serial.print("MENU:wilgotnosc ");
+        //Serial.println(temp);
         byte tempKoniec=0;
         while(tempKoniec<1){
          
@@ -385,15 +443,18 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
             if (digitalRead(pinButtom) == LOW){
               delay(250);
               temp++;
-              Serial.println(temp);
+              //Serial.println(temp);
               lcd.setCursor(0,0);
               lcd.print(temp);
-              if(temp>99) temp=0;
+              if(temp>98){
+                temp=0;
+                lcd.clear();
+              }
             }
               if (digitalRead(pinButtom2) == LOW){
                 delay(250);
                 eep.update(10,temp);
-                Serial.println("zapisano EEPROM");
+                //Serial.println("zapisano EEPROM");
                 tempKoniec=1;
                 //lcd.clear();
                 lcd.setCursor(0,0);
@@ -407,27 +468,24 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
         break;
         }
         
-        case 0:{
+        case 4:{
         //lcd.clear();
         lcd.setCursor(0,0);
         lcd.print("wyjscie         ");
-        Serial.print("MENU:koniec");
+        //Serial.print("MENU:koniec");
+        koniec_menu=1;
         koniec=1;
+        delay(2000);
+        lcd.clear();
         break;
         }
         default:
           //koniec=1;
         break;
-        }/*
-        lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print(Menu[poziomMenu]);
-        Serial.print("MENU:");
-        Serial.println(Menu[poziomMenu]);
-        */
-      
-      } 
-    }
+        }
+     }
+      }  
+    }while( koniec_menu!=1);
   
   }
   
@@ -472,7 +530,7 @@ void loopPIR()
 
      if(digitalRead(pirPin) == HIGH){
       lcd.backlight();
-  //     digitalWrite(ledPin, HIGH);   //the led visualizes the sensors output pin state
+      //digitalWrite(ledPin1, HIGH);   //the led visualizes the sensors output pin state
        if(lockLow){  
          //makes sure we wait for a transition to LOW before any further output is made:
          lockLow = false;            
@@ -481,8 +539,7 @@ void loopPIR()
          Serial.print(millis()/1000);
          Serial.println(" sec"); 
          delay(50);
-         //lcd.home();
-         //lcd.print("RUCH");
+         
          digitalWrite(5, LOW);
          }         
          takeLowTime = true;
@@ -491,7 +548,7 @@ void loopPIR()
 
      if(digitalRead(pirPin) == LOW){ 
             
-//       digitalWrite(ledPin, LOW);  //the led visualizes the sensors output pin state
+     // digitalWrite(ledPin1, LOW);  //the led visualizes the sensors output pin state
 
        if(takeLowTime){
         lowIn = millis();          //save the time of the transition from high to LOW
@@ -509,8 +566,7 @@ void loopPIR()
            digitalWrite(5,HIGH);
            delay(50);
            lcd.noBacklight();
-           //lcd.home();
-           //lcd.print("    ");
+           
            }
            
        }
