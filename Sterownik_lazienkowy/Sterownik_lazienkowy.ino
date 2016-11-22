@@ -20,6 +20,7 @@ AT24Cxx eep(0x50, 32);
 #define pirPin  3 //pin czujnika ruchu PIR
 #define ledPin1 7//pin 
 
+char* text;
 char* Menu[]={"temperatura     ","wilgotnosc      ","wentylator      ","czujnik ruchu   ","koniec          "};
 // inicjalizacja DHT 22 czujnik wilgoci
 DHT dht;
@@ -75,8 +76,8 @@ void setup(void)
 {
   Serial.begin(9600);
   
-   // Initialize DS1307
-  //Serial.println("Initialize DS1307");
+   text="Initialize DS1307";
+  Serial.println(text);
   clock.begin();
 
   // If date not set
@@ -98,8 +99,10 @@ void setup(void)
    digitalWrite(7, HIGH);
    
    dht.setup(pinDHT); // data pin 6
-   //Serial.println(dht.getModel());
-   //Serial.println("Inicjalizacja wyświetlacxza LCD...");
+   //text=dht.getModel();
+   Serial.println(dht.getModel());
+   text="Inicjalizacja wyświetlacxza LCD...";
+   Serial.println(text);
    lcd.begin(16,2);                      // initialize the lcd 
    lcd.backlight();
    
@@ -111,7 +114,8 @@ void setup(void)
   lcd.home();
   //give the sensor some time to calibrate
   //Serial.println("calibrating sensor ");
-  lcd.print("kalibracja PIR");
+  text="kalibracja PIR";
+  lcd.print(text);
   
     //kalibracja czujnika PIR
     for(int i = 0; i < calibrationTime; i++){
@@ -137,14 +141,17 @@ void setup(void)
   //Serial.print("Locating devices...");
 
   sensors.begin();
-  Serial.print("Found ");
+  text="Found ";
+  Serial.print(text);
   // Grab a count of devices on the wire
   numberOfDevices = sensors.getDeviceCount();
   Serial.print(numberOfDevices, DEC);
-  Serial.println(" devices.");
+  text=" devices.";
+  Serial.println(text);
 
   // report parasite power requirements
-  Serial.print("Parasite power is: "); 
+  text="Parasite power is: ";
+  Serial.print(text); 
   if (sensors.isParasitePowerMode()) Serial.println("ON");
   else Serial.println("OFF");
   // Loop through each device, print out address
@@ -153,7 +160,8 @@ void setup(void)
     // Search the wire for address
     if(sensors.getAddress(tempDeviceAddress, i))
     {
-      Serial.println("Odczytano adres termometru z pamięci EEPROM");
+      text="Odczytano adres termometru z pamięci EEPROM";
+      Serial.println(text);
       for(byte temp=0;temp<8;temp++)
       {
         //odczytanie z EEPROM adresów DS18B20
@@ -162,11 +170,13 @@ void setup(void)
       }
       if (strcmp(tempDeviceAddress,tempDeviceAddressEEPROM[i]) == 0)
       {
-        Serial.println("termometr jest juz zapisany w EEPROM");   
+        text="termometr jest juz zapisany w EEPROM";
+        Serial.println(text);   
       }
       else
       {
-        Serial.println("Dodawanie nowego termometru");
+        text="Dodawanie nowego termometru";
+        Serial.println(text);
         for(byte temp=0;temp<8;temp++)
         {
           eep.update((8*i)+(2000+temp)+i,tempDeviceAddress[temp]);
@@ -202,7 +212,8 @@ void loop(void)
 { 
   buttom(4,8,7);
   odczytDHT();
-  Serial.print("Requesting temperatures...");
+  text="Requesting temperatures...";
+  Serial.print(text);
   sensors.requestTemperatures(); // Send the command to get temperatures
   Serial.println("DONE");
   
@@ -270,9 +281,7 @@ void printAddress(DeviceAddress deviceAddress,byte temp)
   {
     if (deviceAddress[i] < 16) Serial.print("0");
     Serial.print(deviceAddress[i], HEX);
-   // DaneDS18B20 [temp][i]=deviceAddress[i];
-    //eep.update(11+i,deviceAddress[i]);
-   // Serial.print(eep.read(11+i),HEX);
+   
     
   }
 }
@@ -325,14 +334,19 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
   }
   
   delay(160);
-  byte poziomMenu =0;
-  if ((digitalRead(pinButtom) == LOW) && (digitalRead(pinButtom2) == LOW)){
   
+  if ((digitalRead(pinButtom) == LOW) && (digitalRead(pinButtom2) == LOW)){
+  byte poziomMenu =0;
     delay(150);
 
     
     //Serial.println("Nacisnieto przycisk ____MENU");
-    
+    /*
+    lcd.clear();
+    lcd.setCursor(4,0);
+    lcd.print("MENU");
+    lcd.setCursor(0,1);
+    lcd.print(Menu[poziomMenu]);*/
     //Jestesmy w menu
     byte koniec_menu=0; 
     do{
@@ -352,16 +366,17 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
       if (digitalRead(pinButtom) == LOW){
       
         delay(160);
-        
+        poziomMenu++;
+        if (poziomMenu==((sizeof(Menu)/sizeof(*Menu)))){
+          poziomMenu=0;
+        }
         lcd.setCursor(0,1);
         lcd.print(Menu[poziomMenu]);
         //Serial.print("MENU:");
         //Serial.println(Menu[poziomMenu]);
         
-        if (poziomMenu==(sizeof(Menu)/sizeof(*Menu))){
-          poziomMenu=0;
-        }
-        poziomMenu++;
+        
+       
       
       }
       
@@ -369,8 +384,8 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
      if (digitalRead(pinButtom2) == LOW){
       
         delay(160);
-        switch( poziomMenu-1 ){
-        
+        switch( poziomMenu){
+        /*
         case 1:{
         lcd.clear();
         lcd.setCursor(0,0);
@@ -378,7 +393,7 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
         //Serial.print("MENU:wartosc1");
         koniec=1;
         break;
-        }
+        }*/
         case 3:{ //czujnik PIR
         lcd.clear();
         lcd.setCursor(0,0);
@@ -484,6 +499,7 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
         break;
         }
      }
+      
       }  
     }while( koniec_menu!=1);
   
