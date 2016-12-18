@@ -6,27 +6,264 @@
 #include <DS1307.h>
 #include <AT24Cxx.h>
 
+
+// inicjalizacja LCD
+LiquidCrystal_I2C lcd(0x20,4,5,6,0,1,2,3,7,NEGATIVE);  // set the LCD address to 0x20 for a 16 chars and 2 line display
+
+class Fotorezystor{
+  protected:
+    byte lightPin;  //define a pin for Photo resistor
+    uint8_t ciemnosc;
+    boolean StanCiemnosci;
+  public:
+    void Begin( byte pin){
+      this->lightPin=pin;
+      this->ciemnosc=250;
+      this->StanCiemnosci=false;
+    } 
+    float Odczyt(){
+      return analogRead(this->lightPin)/4;
+    } 
+    boolean SprawdzajCiemnosc( uint8_t poziomCiemnosci){
+      this->ciemnosc= poziomCiemnosci;
+      if((this->Odczyt()) > this->ciemnosc ){    
+        Serial.println("high");
+        this->StanCiemnosci=true; 
+      }
+      else{
+        this->StanCiemnosci=false;
+        Serial.println("low"); 
+      }
+      return this->StanCiemnosci;  
+    }
+    float PrzeliczNaVolt(){
+      float v=this->Odczyt()*5/255;
+      Serial.println(v);
+      return v;
+    }
+    uint8_t PoziomCiemnosciGraf(){
+      byte znak=221;
+      int poziom=this->Odczyt()/16;
+      for (byte l=0;l<=16;l++){
+        //Serial.print((char)221);
+       // Serial.print("|");
+       if(l<=poziom){
+        znak=0xFF;
+       }
+       else{
+        znak=32;
+       }
+       lcd.print((char)znak);
+      }
+      //Serial.println(" ");
+      return poziom;
+    }
+    uint8_t PoziomCiemnosciGraf(byte poziom){
+      byte znak=221;
+      
+      for (byte l=0;l<=16;l++){
+        //Serial.print((char)221);
+       // Serial.print("|");
+       if(l<=poziom){
+        znak=0xFF;
+       }
+       else{
+        znak=32;
+       }
+       lcd.print((char)znak);
+      }
+      //Serial.println(" ");
+      return poziom;
+    }
+    
+};
+
+class Wentylator{
+  protected:
+    boolean Pracuje;//info czy wentylator pracuje
+    byte Histereza;//histereza
+    byte pinPrzekaznika;//pin przekaznika na ktory załączy wntylator
+
+  public:
+    void Begin(byte pin,byte hist){
+      this->pinPrzekaznika=pin;
+      this->Pracuje=false;
+      this->Histereza=hist;
+    }
+    void AutomatWentylator(byte WilgWzor,int WilgPomiar){
+      //Serial.print("wentylator");Serial.println(Pracuje);
+      //Serial.print("Wzor");Serial.println(WilgWzor); 
+      //Serial.print("Pomiar");Serial.println(WilgPomiar);
+    if((WilgWzor<WilgPomiar) || (Pracuje)){
+    Serial.print("WilgotnoscWzor");Serial.print(WilgWzor);
+    if(WilgWzor-Histereza<WilgPomiar){
+      Serial.print("WentylatorZalacz");Serial.print(Pracuje);
+      digitalWrite(pinPrzekaznika,LOW);
+      this->Pracuje=true;  
+    }
+      
+  }
+  else{
+    digitalWrite(pinPrzekaznika,HIGH);
+    this->Pracuje=false;
+  }
+  
+}
+    byte AktuHist(byte tempHist){
+      this->Histereza=tempHist;
+      return tempHist;  
+    }
+    boolean OnWentylator(){
+      if(Pracuje){
+        digitalWrite(this->pinPrzekaznika,HIGH);
+        this->Pracuje=false;
+        return false;
+        //break;
+      }
+      else{
+        digitalWrite(this->pinPrzekaznika,LOW);
+        this->Pracuje=true;
+        return true;
+        //break;
+      }
+    }
+};
+
+class Przekaznik{
+  protected:
+    boolean OnOff;//info czy  pracuje
+    unsigned long CzasUruchomienia;//czas zalaczenia przekaznika
+    byte pinPrzekaznika;//pin przekaznika 
+    boolean OnStanem;// czy załaczany stanem LOW-0 czy HIGH-1
+  public:
+    void Init(byte pinP,boolean LowHigh){
+      this->pinPrzekaznika=pinP;
+      this->OnOff=false;
+      this->OnStanem=LowHigh;
+    }
+    boolean OnPrzekaznik(){//tryb monostabilny
+      if(!OnOff){
+        digitalWrite(this->pinPrzekaznika,this->OnStanem);
+        this->OnOff=true;
+        CzasUruchomienia=millis();
+        return true;
+        
+      }
+      else{
+        digitalWrite(this->pinPrzekaznika,!(this->OnStanem));
+        this->OnOff=false;
+        return false;
+        
+      }
+    }
+    boolean OnPrzekaznik(boolean On){//tryb bistabilny
+      if(On){
+        digitalWrite(this->pinPrzekaznika,this->OnStanem);
+        this->OnOff=true;
+        CzasUruchomienia=millis();
+        return false;
+        
+      }
+      if(!On){
+        digitalWrite(this->pinPrzekaznika,!(this->OnStanem));
+        this->OnOff=false;
+        return true;
+        
+      }
+    }
+    boolean OffTimePrzekaznik(unsigned long CzasOff){
+      //CzasOff w milisekundach Czas po jakim zostanie wyłączony przekaźnik
+      //wyłacza przekaznik po upływie czasu   
+      if(millis()-(this->CzasUruchomienia)>CzasOff){
+        this->OnPrzekaznik(0);
+        this->CzasUruchomienia=millis();
+      }
+    }
+  
+};
+class PIR{
+  protected:
+    unsigned long CzasCzuwania;//czasCzuwania
+    boolean AktualnyStan;
+    uint8_t pinPir;//pin czujnika PIR
+    uint16_t CzujnikZmierzchu;//poziom fotorezystora
+    uint8_t CzasKalibracji;//kalibracja czujnika PIR
+    unsigned long int CzasStanLOW;//czas kiedy wykryto ponownie ruch 
+    boolean JestLOW;// Czy jest stan LOW z PIR
+    boolean PobierzCzasLOW;// 
+    byte pinKontrolkiLED;
+  public:
+    void Begin(byte pin,byte pinKontrolki,unsigned long CzasPauzy){
+      this->pinPir=pin;
+      this->AktualnyStan=false;
+      this->CzasCzuwania=CzasPauzy;
+      this->CzujnikZmierzchu=100;
+      this->CzasKalibracji=30;
+      this->CzasStanLOW;
+      this->JestLOW=true;
+      this->pinKontrolkiLED=pinKontrolki;
+    }
+    void UstawCzujnikZmierzchu(uint16_t Poziom){
+      this->CzujnikZmierzchu=Poziom;
+    }
+    boolean KalibracjaPIR(byte IleSekund){
+      for(byte i = 0; i < CzasKalibracji; i++){
+      delay(1000);
+      }
+      return true;
+    }
+    void WykrylRuch(){
+      if(digitalRead(this->pinPir)==HIGH){
+        digitalWrite(this->pinKontrolkiLED,HIGH);
+        if(this->JestLOW){
+          this->JestLOW=false;
+          delay(50);
+        }
+        this->PobierzCzasLOW=true;
+      }
+      if(digitalRead(this->pinPir)==LOW){
+        digitalWrite(this->pinKontrolkiLED,LOW);
+        if(PobierzCzasLOW){
+          CzasStanLOW=millis();
+          PobierzCzasLOW=false;
+        }
+        if(!JestLOW && millis()-CzasStanLOW > CzasCzuwania){
+          JestLOW=true;
+          delay(50);
+        }
+      }
+    }
+};
+
+Fotorezystor F;
 // zegar i EEPROM układ Tiny RTC DS1307
 DS1307 clock;
 RTCDateTime dt;
 
 AT24Cxx eep(0x50, 32);
 
+Wentylator W;
+
 
  // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 2
-#define TEMPERATURE_PRECISION 9
+#define TEMPERATURE_PRECISION 11
 #define pinDHT 6//pin DHT22
 #define pirPin  3 //pin czujnika ruchu PIR
-#define ledPin1 7//pin 
+#define pinRelayLight 5//pin przekaznika swiatła
+#define pinRelayWent 7//pin przekaznika wentylatora
+#define pinButtonNext 4//pin przycisku NEXT
+#define pinButtonOK 8//pin przycisku OK
+#define HisterezaWentylatora 10//histereza wyłaczenia wentylatora w %
+#define pinLED 13// dioda LED
 
 char* text;
-char* Menu[]={"temperatura     ","wilgotnosc      ","wentylator      ","czujnik ruchu   ","koniec          "};
+char* Menu[]={"temperatura     ","Histereza wentyl","wentylator      ","czujnik ruchu   ","ust.daty i czasu","Stan baterii RTC","Czujnik zmierzchu ","koniec          "};
 // inicjalizacja DHT 22 czujnik wilgoci
 DHT dht;
 
-// inicjalizacjia LCD
-LiquidCrystal_I2C lcd(0x20,4,5,6,0,1,2,3,7,NEGATIVE);  // set the LCD address to 0x20 for a 16 chars and 2 line display
+Przekaznik P;
+
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -39,7 +276,7 @@ DeviceAddress tempDeviceAddress;
 DeviceAddress tempDeviceAddressEEPROM[]={0};
 byte numberOfDevices; // Number of temperature devices found
 
-
+byte HisterezaTemp=2;
 // connectors on bottom
 /*
 --------------------
@@ -64,18 +301,56 @@ long unsigned int lowIn;
 
 //the amount of milliseconds the sensor has to be low 
 //before we assume all motion has stopped
-long unsigned int pause = 0;  
+long unsigned int pause = 10;  
 
 boolean lockLow = true;
 boolean takeLowTime;  
 
 // Timer
-unsigned long TimeLastStart=0 ;
+class MyTimer{
+  protected:
+    
+    unsigned long CzasUruchomienia;//czas uruchomienia 
+    
+    boolean Stan;// stan wykorzystania Timera czy 
+  public:
+    void Begin(){
+      this->CzasUruchomienia=millis();
+      this->Stan=1;
+    }
+    boolean Sprawdzaj(unsigned long Czekam){
+      if(Stan){
+        if(millis()-CzasUruchomienia>Czekam){
+          this->CzasUruchomienia=millis();
+          this->Stan=0;
+          
+                  
+        }
+      }  
+      else{
+         this->Stan=1;
+      
+      }
+      return this->Stan;
+    }
+};
+unsigned long TimeLastStart=0;
+// dane z EEPROM dotyczące wilgotnosci
+byte Wilgotnosc;
+MyTimer Czas;
+byte PoziomZmierzchu;
 //-------------------------------------------------------------
 void setup(void)
 {
+  F.Begin(A1);
+  Czas.Begin();
   Serial.begin(9600);
+  text="Inicjalizacja wyświetlacxza LCD...";
+   Serial.println(text);
+   lcd.begin(16,2);                      // initialize the lcd 
+   lcd.backlight();
   
+  P.Init(pinRelayLight,0);
    text="Initialize DS1307";
   Serial.println(text);
   clock.begin();
@@ -90,21 +365,19 @@ void setup(void)
   wyswietlenieCzasu();
 
 //---------------------
-   pinMode (4,INPUT_PULLUP);// pin 4 dla przycisku podłaczonego do GND
-   pinMode (8,INPUT_PULLUP);// pin 8 dla przycisku podłaczonego do GND
-   pinMode(5, OUTPUT);//pin przekaźnika automat z PIR
-   pinMode(7,OUTPUT);//pin przekaźnika przycisku  
+   pinMode (pinButtonNext,INPUT_PULLUP);// pin 4 dla przycisku podłaczonego do GND
+   pinMode (pinButtonOK,INPUT_PULLUP);// pin 8 dla przycisku podłaczonego do GND
+   pinMode(pinRelayLight, OUTPUT);//pin przekaźnika automat z PIR
+   pinMode(pinRelayWent,OUTPUT);//pin przekaźnika przycisku  
    pinMode(pirPin, INPUT);//sekcja czujnika PIR
-   digitalWrite(5,HIGH);//ustalenie stanu poczatkowego
-   digitalWrite(7, HIGH);
-   
+   pinMode(pinLED,OUTPUT);//dioda LED sygnalizacyjna
+   digitalWrite(pinRelayLight,HIGH);//ustalenie stanu poczatkowego
+   digitalWrite(pinRelayWent, HIGH);
+   digitalWrite(pinLED,LOW);
    dht.setup(pinDHT); // data pin 6
    //text=dht.getModel();
    Serial.println(dht.getModel());
-   text="Inicjalizacja wyświetlacxza LCD...";
-   Serial.println(text);
-   lcd.begin(16,2);                      // initialize the lcd 
-   lcd.backlight();
+   
    
    wyswietlenieTytulu(); 
     
@@ -125,14 +398,21 @@ void setup(void)
       lcd.print(" z ");
       lcd.print(calibrationTime);
       delay(1000);
+      
       }
     //Serial.println(" done");
     //Serial.println("SENSOR ACTIVE");
     //Serial.print("czas czuwania PIR(milisek):");
     
     pause=eep.read(11)*60000;
+    Wilgotnosc=eep.read(10);
+    HisterezaTemp=eep.read(9);
+    PoziomZmierzchu=eep.read(8);
+    
+    
+    W.Begin(pinRelayWent,HisterezaTemp);
     //Serial.println(pause);
-    delay(50);
+    //delay(50);
   
   
   
@@ -204,13 +484,14 @@ void setup(void)
     }
   }
   lcd.clear();
+  lcd.noBacklight();
 }
 
 
 
 void loop(void)
 { 
-  buttom(4,8,7);
+  MenuSystem(pinButtonNext,pinButtonOK,pinRelayLight,pinRelayWent);
   odczytDHT();
   text="Requesting temperatures...";
   Serial.print(text);
@@ -229,10 +510,12 @@ void loop(void)
     Serial.println(i,DEC);
     
     // It responds almost immediately. Let's print out the data
-    float temperatura=GetToPrintTemperature(tempDeviceAddress); // Use a simple function to print out the data
+    //float temperatura=GetToPrintTemperature(tempDeviceAddress); // Use a simple function to print out the data
     
     lcd.setCursor(10,i);
-    lcd.print(temperatura);
+    lcd.print(GetToPrintTemperature(tempDeviceAddress));
+    text="\`C  ";
+    lcd.print(text);
     
   } 
   //else ghost device! Check your power requirements and cabling
@@ -241,8 +524,9 @@ void loop(void)
   loopPIR();
 }
 
+
 // function to print the temperature for a device
-float GetToPrintTemperature(DeviceAddress deviceAddress)
+int GetToPrintTemperature(DeviceAddress deviceAddress)
 {
   // method 1 - slower
   //Serial.print("Temp C: ");
@@ -251,7 +535,7 @@ float GetToPrintTemperature(DeviceAddress deviceAddress)
   //Serial.print(sensors.getTempF(deviceAddress)); // Makes a second call to getTempC and then converts to Fahrenheit
 
   // method 2 - faster
-  float tempC = sensors.getTempC(deviceAddress);
+  int tempC = sensors.getTempC(deviceAddress);
   Serial.print("Temp C: ");
   Serial.println(tempC);
   //lcd.setCursor(11,0); 
@@ -297,23 +581,31 @@ void odczytDHT()
     //Serial.println(TimeLastStart);
     //Serial.println(millis());
     Serial.print(dht.getStatusString());
-    float humidity = dht.getHumidity();
-    float temperature = dht.getTemperature();
+    int humidity = dht.getHumidity();
+    int temperature = dht.getTemperature();
+    //int(x);
     Serial.print("\t");
+    lcd.setCursor(0,0);
+    lcd.print(humidity, 1);
+    lcd.print("%");
     Serial.print(humidity, 1);
     Serial.print("\t\t");
     Serial.print(temperature, 1);
     Serial.print("\t\t");
+    lcd.setCursor(0,1);
+    lcd.print(temperature, 1);
+    lcd.print("\`C");
   }
 }
 
-void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
+void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
 {
   if (digitalRead(pinButtom) == LOW) {
     // turn LED on:
     delay(60);
     //Serial.println("Nacisnieto przycisk 1");
-    digitalWrite(pinLed, LOW);
+    P.OnPrzekaznik();
+    lcd.backlight();
   } else {
     delay(60);
     // turn LED off:
@@ -325,11 +617,17 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
     // turn LED on:
     delay(60);
     //Serial.println("Nacisnieto przycisk ____2");
-    digitalWrite(pinLed, LOW);
+    
+    W.OnWentylator();
+   
+    lcd.backlight();
+     wyswietlenieCzasu();
+     lcd.clear();
+    //digitalWrite(pinRelay2, LOW);
   } else {
     delay(60);
     // turn LED off:
-    digitalWrite(pinLed, HIGH);
+    //digitalWrite(pinRelay2, HIGH);
     
   }
   
@@ -339,7 +637,7 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
   byte poziomMenu =0;
     delay(150);
 
-    
+    lcd.backlight();
     //Serial.println("Nacisnieto przycisk ____MENU");
     /*
     lcd.clear();
@@ -385,15 +683,48 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
       
         delay(160);
         switch( poziomMenu){
-        /*
+        
         case 1:{
+        byte temp =  eep.read(9);
         lcd.clear();
         lcd.setCursor(0,0);
-        lcd.print("wartosc 1");
-        //Serial.print("MENU:wartosc1");
-        koniec=1;
+        lcd.print(temp);
+        //Serial.print("MENU:Histereza ");
+        //Serial.println(temp);
+        byte tempKoniec=0;
+        while(tempKoniec<1){
+         
+          
+            if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              temp++;
+              //Serial.println(temp);
+              lcd.setCursor(0,0);
+              lcd.print(temp);
+              if(temp>49){
+                temp=1;
+                lcd.clear();
+              }
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                eep.update(9,temp);
+                //Serial.println("zapisano EEPROM");
+                Wilgotnosc=temp;
+                tempKoniec=1;
+                //lcd.clear();
+                lcd.setCursor(0,0);
+                lcd.print("zapisano        ");
+                HisterezaTemp=temp;
+                W.AktuHist(temp);
+                delay(600);
+                koniec=1;
+              }
+           
+          
+         }
         break;
-        }*/
+        }
         case 3:{ //czujnik PIR
         lcd.clear();
         lcd.setCursor(0,0);
@@ -435,6 +766,7 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
                 //Serial.println("zapisano EEPROM");
                 tempKoniec=1;
                 lcd.setCursor(0,0);
+                pause=temp_min*60000;
                 lcd.print("zapisano        ");
                 delay(600);
                 koniec=1;
@@ -442,6 +774,287 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
            
           
          }
+        break;
+        }
+        //Czujnik zmierzchu
+        case 6:{ 
+          
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("ust.czujnika zmierzchu");
+        //Serial.print("MENU:ustawienia cujnika zmierzchu");
+        byte temp_min =  eep.read(8);
+        Serial.println(temp_min);
+       // byte temp_sek =  eep.read(12);
+        delay(2000);
+        lcd.clear();
+        lcd.setCursor(0,0);
+        F.PoziomCiemnosciGraf();
+        //lcd.print(temp_min);
+        lcd.setCursor(0,1);
+        F.PoziomCiemnosciGraf(temp_min);
+        byte tempKoniec=0;
+        while(tempKoniec<1){
+         
+          
+            if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              temp_min++;
+              //Serial.println(temp_min);
+              lcd.setCursor(0,1);
+              F.PoziomCiemnosciGraf(temp_min);
+              
+              
+              if(temp_min>16){
+                temp_min=1;
+                lcd.clear();
+                lcd.setCursor(0,0);
+                F.PoziomCiemnosciGraf();
+                lcd.setCursor(0,1);
+                F.PoziomCiemnosciGraf(temp_min);
+              }
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                eep.update(8,temp_min);
+                //Serial.println("zapisano EEPROM");
+                tempKoniec=1;
+                lcd.setCursor(0,0);
+                PoziomZmierzchu=temp_min;
+                lcd.print("zapisano        ");
+                delay(600);
+                koniec=1;
+              }
+           
+          
+         }
+        break;
+        }
+        case 4:{
+        
+        lcd.clear();
+        dt = clock.getDateTime();
+        lcd.setCursor(0,0); 
+        lcd.print(dt.year);   lcd.print("-");
+        lcd.print(dt.month);  lcd.print("-");
+        lcd.print(dt.day);    lcd.print(" ");
+        lcd.setCursor(0,1);
+        lcd.print(dt.hour);   lcd.print(":");
+        lcd.print(dt.minute); lcd.print(":");
+        lcd.print(dt.second); lcd.print(" ");
+        delay(1500);
+        
+        
+        byte tempKoniec=0;
+        byte tempKoniecUstawienCzasu=0;
+        while (tempKoniecUstawienCzasu<1){
+        //ustawiasz rok
+        lcd.clear();
+        lcd.setCursor(0,0);
+        text="Rok";
+        lcd.print(text);
+        lcd.setCursor(0,1);
+        lcd.print(dt.year);
+        while(tempKoniec<1){
+          if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              dt.year++;
+              lcd.setCursor(0,1);
+              lcd.print(dt.year);
+              if(dt.year>2030){
+              dt.year=2014;
+              
+              }
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                tempKoniec=1;
+                lcd.setCursor(0,0);
+                if (!clock.isReady()){
+                    
+                clock.setDateTime(dt.year,dt.month,dt.day,dt.hour,dt.minute,dt.second);
+                lcd.print("zapisano        ");
+                }
+                else{
+                  lcd.print(" nie zapisano    ");
+                }
+                delay(600);
+                
+              }
+           
+          
+         }
+        //ustawienia miesiącsa 
+        lcd.clear();
+        lcd.setCursor(0,0);
+        text="Miesiac";
+        lcd.print(text);
+        lcd.setCursor(0,1);
+        lcd.print(dt.month);
+        tempKoniec=0;
+        while(tempKoniec<1){
+          if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              dt.month++;
+              lcd.setCursor(0,1);
+              lcd.print(dt.month);
+              if(dt.month>12){
+              lcd.setCursor(0,1);
+              text="  ";
+              lcd.print(text);
+              lcd.setCursor(0,1);   
+              dt.month=1;
+              lcd.print(dt.month);
+              
+              }
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                tempKoniec=1;
+                lcd.setCursor(0,0);
+                clock.setDateTime(dt.year,dt.month,dt.day,dt.hour,dt.minute,dt.second);
+                lcd.print("zapisano        ");
+                delay(600);
+                //koniec=1;
+              }
+           
+          
+         } 
+        //ustawienia dnia
+        
+        lcd.clear();
+        lcd.setCursor(0,0);
+        text="Dzien";
+        lcd.print(text);
+        lcd.setCursor(0,1);
+        lcd.print(dt.day);
+        tempKoniec=0;
+        while(tempKoniec<1){
+          if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              dt.day++;
+              lcd.setCursor(0,1);
+              lcd.print(dt.day);
+              if(((dt.month==1||dt.month==3||dt.month==5||dt.month==7||dt.month==9||dt.month==11)&&(dt.day>31))||((dt.month==4||dt.month==6||dt.month==10||dt.month==12)&&(dt.day>30))||((dt.month==2)&&(dt.day>29))){
+              dt.day=1;
+              lcd.setCursor(0,1);
+              text="  ";
+              lcd.print(text);
+              lcd.setCursor(0,1);
+              lcd.print(dt.day); 
+              
+              }/*
+              if((dt.month==4||dt.month==6||dt.month==10||dt.month==12)&&(dt.day>30)){
+              dt.day=0;
+              lcd.setCursor(0,1);
+              text="  ";
+              lcd.print(text);
+              lcd.setCursor(0,1);
+              lcd.print(dt.day); 
+              
+              }
+              if((dt.month==2)&&(dt.day>29)){
+              dt.day=1;
+              lcd.setCursor(0,1);
+              text="  ";
+              lcd.print(text);
+              lcd.setCursor(0,1);
+              lcd.print(dt.day); 
+              
+              }*/
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                tempKoniec=1;
+                lcd.setCursor(0,0);
+                clock.setDateTime(dt.year,dt.month,dt.day,dt.hour,dt.minute,dt.second);
+                lcd.print("zapisano        ");
+                delay(600);
+                //koniec=1;
+              }
+           
+          
+         }  
+        //ustawienia Godzina
+        
+        lcd.clear();
+        lcd.setCursor(0,0);
+        text="Godzina";
+        lcd.print(text);
+        lcd.setCursor(0,1);
+        lcd.print(dt.hour);
+        tempKoniec=0;
+        while(tempKoniec<1){
+          if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              dt.hour++;
+              lcd.setCursor(0,1);
+              lcd.print(dt.hour);
+              if(dt.hour>24){
+                
+              dt.hour=1;
+              lcd.setCursor(0,1);
+              text="  ";
+              lcd.print(text);
+              lcd.setCursor(0,1);
+              lcd.print(dt.hour); 
+              
+              }
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                tempKoniec=1;
+                lcd.setCursor(0,0);
+                clock.setDateTime(dt.year,dt.month,dt.day,dt.hour,dt.minute,dt.second);
+                lcd.print("zapisano        ");
+                delay(600);
+                //koniec=1;
+              }
+           
+          
+         }
+        //ustawienia minuty
+        
+        lcd.clear();
+        lcd.setCursor(0,0);
+        text="Minuty";
+        lcd.print(text);
+        lcd.setCursor(0,1);
+        lcd.print(dt.minute);
+        byte tempKoniec=0;
+        while(tempKoniec<1){
+          if (digitalRead(pinButtom) == LOW){
+              delay(250);
+              dt.minute++;
+              lcd.setCursor(0,1);
+              lcd.print(dt.minute);
+              if(dt.minute>59){
+              dt.minute=0;
+              lcd.setCursor(0,1);
+              text="  ";
+              lcd.print(text);
+              lcd.setCursor(0,1);
+              lcd.print(dt.minute);  
+              
+              
+              }
+            }
+              if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                tempKoniec=1;
+                lcd.setCursor(0,0);
+                clock.setDateTime(dt.year,dt.month,dt.day,dt.hour,dt.minute,dt.second);
+                lcd.print("zapisano        ");
+                delay(600);
+                koniec=1;
+                tempKoniecUstawienCzasu=1;
+                wyswietlenieCzasu();
+              }
+           
+          
+         }      
+        
+        }
         break;
         }
         case 2:{
@@ -462,14 +1075,15 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
               lcd.setCursor(0,0);
               lcd.print(temp);
               if(temp>98){
-                temp=0;
-                lcd.clear();
+              temp=20;
+              lcd.clear();
               }
             }
               if (digitalRead(pinButtom2) == LOW){
                 delay(250);
                 eep.update(10,temp);
                 //Serial.println("zapisano EEPROM");
+                Wilgotnosc=temp;
                 tempKoniec=1;
                 //lcd.clear();
                 lcd.setCursor(0,0);
@@ -482,8 +1096,37 @@ void buttom(byte pinButtom,byte pinButtom2, byte pinLed)
          }
         break;
         }
-        
-        case 4:{
+        //stan baterii RTC DS1307
+        case 5:{
+          float batteryVoltageRead = analogRead (A0);
+          byte tempKoniec=0;
+          lcd.clear();
+          lcd.setCursor(0,0);
+          text="Stan naladawania baterii";
+          lcd.print(text);
+          float batteryVoltage;  
+          while(tempKoniec<1){
+            batteryVoltage =float( batteryVoltageRead * (5/1023.) );  // format might need some tweaking
+            lcd.setCursor(0,1);
+            lcd.print(batteryVoltage,2);
+            text=" V - ";
+            lcd.print(text);
+            Serial.println (batteryVoltage, 2);  // same here, not sure how to specify how many decimal points are shown
+            batteryVoltage = (batteryVoltage/3.6)*100;
+            lcd.print(batteryVoltage, 1);
+            text=" %";
+            lcd.print(text);
+            if (digitalRead(pinButtom2) == LOW){
+                delay(250);
+                koniec=1;
+                tempKoniec=1;
+               
+            }
+          }
+          break;
+        }
+        //koniec wyjscie z menu
+        case 7:{
         //lcd.clear();
         lcd.setCursor(0,0);
         lcd.print("wyjscie         ");
@@ -514,6 +1157,9 @@ unsigned long CzasWykonania( void( * wsk_na_funkcje )() )
    
 }
 */
+
+
+
 void wyswietlenieCzasu()
 {
   dt = clock.getDateTime();
@@ -535,8 +1181,8 @@ void wyswietlenieCzasu()
   lcd.print(dt.day);    lcd.print(" ");
   lcd.setCursor(0,1);
   lcd.print(dt.hour);   lcd.print(":");
-  lcd.print(dt.minute); lcd.print(":");
-  lcd.print(dt.second); lcd.println("");
+  lcd.print(dt.minute);// lcd.print(":");
+  //lcd.print(dt.second); lcd.print(" ");
 
   delay(5000);
 }
@@ -545,18 +1191,22 @@ void loopPIR()
 {
 
      if(digitalRead(pirPin) == HIGH){
-      lcd.backlight();
-      //digitalWrite(ledPin1, HIGH);   //the led visualizes the sensors output pin state
+      
+      digitalWrite(pinLED, HIGH);   //the led visualizes the sensors output pin state
        if(lockLow){  
          //makes sure we wait for a transition to LOW before any further output is made:
          lockLow = false;            
          Serial.println("---");
          Serial.print("motion detected at ");
+         lcd.backlight();
+         P.OnPrzekaznik(1);
+         //lcd.setCursor(0, 1); 
+         
+         //lcd.print(millis()/1000);
          Serial.print(millis()/1000);
          Serial.println(" sec"); 
          delay(50);
-         
-         digitalWrite(5, LOW);
+       
          }         
          takeLowTime = true;
                 
@@ -564,7 +1214,7 @@ void loopPIR()
 
      if(digitalRead(pirPin) == LOW){ 
             
-     // digitalWrite(ledPin1, LOW);  //the led visualizes the sensors output pin state
+      digitalWrite(pinLED, LOW);  //the led visualizes the sensors output pin state
 
        if(takeLowTime){
         lowIn = millis();          //save the time of the transition from high to LOW
@@ -577,11 +1227,16 @@ void loopPIR()
            //a new motion sequence has been detected
            lockLow = true;                        
            Serial.print("motion ended at ");      //output
+           //lcd.setCursor(0, 1); 
+         
+           //lcd.print("ended");
            Serial.print((millis() - pause)/1000);
            Serial.println(" sec");
-           digitalWrite(5,HIGH);
-           delay(50);
+           
            lcd.noBacklight();
+           P.OnPrzekaznik(0);
+           delay(50);
+           
            
            }
            
