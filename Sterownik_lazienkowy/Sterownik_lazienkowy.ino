@@ -15,12 +15,21 @@ class Fotorezystor{
     byte lightPin;  //define a pin for Photo resistor
     uint8_t ciemnosc;
     boolean StanCiemnosci;
+    boolean StanPIR; // Jeśli PIR wykrył ruch jest true jeżeli zakończył wykrywanie ruchu jest w FALSE;
   public:
     void Begin( byte pin){
       this->lightPin=pin;
       this->ciemnosc=250;
-      this->StanCiemnosci=false;
-    } 
+      this->StanCiemnosci=false;//false jasno, true ciemno
+      this->StanPIR=false;
+    }
+    boolean SprawdzajStanPIR(){
+      return this->StanPIR;
+    }
+    boolean UstawStanPIR(boolean stan){
+      this->StanPIR=stan;
+      return this->StanPIR;
+    }
     float Odczyt(){
       return analogRead(this->lightPin)/4;
     } 
@@ -36,6 +45,7 @@ class Fotorezystor{
       }
       return this->StanCiemnosci;  
     }
+    
     float PrzeliczNaVolt(){
       float v=this->Odczyt()*5/255;
       Serial.println(v);
@@ -181,59 +191,7 @@ class Przekaznik{
     }
   
 };
-class PIR{
-  protected:
-    unsigned long CzasCzuwania;//czasCzuwania
-    boolean AktualnyStan;
-    uint8_t pinPir;//pin czujnika PIR
-    uint16_t CzujnikZmierzchu;//poziom fotorezystora
-    uint8_t CzasKalibracji;//kalibracja czujnika PIR
-    unsigned long int CzasStanLOW;//czas kiedy wykryto ponownie ruch 
-    boolean JestLOW;// Czy jest stan LOW z PIR
-    boolean PobierzCzasLOW;// 
-    byte pinKontrolkiLED;
-  public:
-    void Begin(byte pin,byte pinKontrolki,unsigned long CzasPauzy){
-      this->pinPir=pin;
-      this->AktualnyStan=false;
-      this->CzasCzuwania=CzasPauzy;
-      this->CzujnikZmierzchu=100;
-      this->CzasKalibracji=30;
-      this->CzasStanLOW;
-      this->JestLOW=true;
-      this->pinKontrolkiLED=pinKontrolki;
-    }
-    void UstawCzujnikZmierzchu(uint16_t Poziom){
-      this->CzujnikZmierzchu=Poziom;
-    }
-    boolean KalibracjaPIR(byte IleSekund){
-      for(byte i = 0; i < CzasKalibracji; i++){
-      delay(1000);
-      }
-      return true;
-    }
-    void WykrylRuch(){
-      if(digitalRead(this->pinPir)==HIGH){
-        digitalWrite(this->pinKontrolkiLED,HIGH);
-        if(this->JestLOW){
-          this->JestLOW=false;
-          delay(50);
-        }
-        this->PobierzCzasLOW=true;
-      }
-      if(digitalRead(this->pinPir)==LOW){
-        digitalWrite(this->pinKontrolkiLED,LOW);
-        if(PobierzCzasLOW){
-          CzasStanLOW=millis();
-          PobierzCzasLOW=false;
-        }
-        if(!JestLOW && millis()-CzasStanLOW > CzasCzuwania){
-          JestLOW=true;
-          delay(50);
-        }
-      }
-    }
-};
+
 
 Fotorezystor F;
 // zegar i EEPROM układ Tiny RTC DS1307
@@ -355,13 +313,13 @@ void setup(void)
   Serial.println(text);
   clock.begin();
 
-  // If date not set
+ /* // If date not set
   if (!clock.isReady())
   {
     // Set sketch compiling time
     clock.setDateTime(__DATE__, __TIME__);
   }
-  //wyswietlenie czasu 
+  *///wyswietlenie czasu 
   wyswietlenieCzasu();
 
 //---------------------
@@ -491,12 +449,51 @@ void setup(void)
 
 void loop(void)
 { 
+  
   MenuSystem(pinButtonNext,pinButtonOK,pinRelayLight,pinRelayWent);
   odczytDHT();
-  text="Requesting temperatures...";
-  Serial.print(text);
+  OdczytTemperaturDS18B20();
+  
+   if(Czas.Sprawdzaj(60000)){
+     // if (clock.isReady()){
+        dt = clock.getDateTime();
+        lcd.setCursor(0,1);
+        //text=dt.hour+":"+dt.minute;
+        //Serial.print(text);
+        //lcd.print(text);
+        lcd.print(dt.year);   lcd.print("-");
+        print2digits(dt.month);  lcd.print("-");
+        print2digits(dt.day);    lcd.print(" ");
+        print2digits(dt.hour);   lcd.print(":");
+        print2digits(dt.minute);
+     // }
+   }
+  if(F.SprawdzajStanPIR() ){
+    loopPIR();
+  }
+  else{
+    if(F.SprawdzajCiemnosc(PoziomZmierzchu)){
+  
+      loopPIR();
+    }
+  }
+}
+
+//urzywane do wyswietlania czasu zmienia wyswietlane liczby na 2cyfrowe
+void print2digits(byte number) {
+  if (number >= 0 && number < 10) {
+    lcd.print('0');
+  }
+  lcd.print(number);
+}
+
+//odczyt temperatur z Ds18B20
+void OdczytTemperaturDS18B20(){
+//text="Requesting temperatures...";
+ // Serial.print(text);
   sensors.requestTemperatures(); // Send the command to get temperatures
-  Serial.println("DONE");
+  
+ // Serial.println("DONE");
   
   
   // Loop through each device, print out temperature data
@@ -504,26 +501,26 @@ void loop(void)
   {
     // Search the wire for address
     if(sensors.getAddress(tempDeviceAddress, i))
-  {
-    // Output the device ID
-    Serial.print("Temperature for device: ");
-    Serial.println(i,DEC);
+    {
+      // Output the device ID
+      Serial.print("Temperature for device: ");
+      Serial.println(i,DEC);
     
-    // It responds almost immediately. Let's print out the data
-    //float temperatura=GetToPrintTemperature(tempDeviceAddress); // Use a simple function to print out the data
+      // It responds almost immediately. Let's print out the data
+      //float temperatura=GetToPrintTemperature(tempDeviceAddress); // Use a simple function to print out the data
     
-    lcd.setCursor(10,i);
-    lcd.print(GetToPrintTemperature(tempDeviceAddress));
-    text="\`C  ";
-    lcd.print(text);
+      lcd.setCursor(10,i);
+      lcd.print(GetToPrintTemperature(tempDeviceAddress));
+      text="\`C  ";
+      lcd.print(text);
     
-  } 
+    
+    } 
+ 
   //else ghost device! Check your power requirements and cabling
   
   }
-  loopPIR();
 }
-
 
 // function to print the temperature for a device
 int GetToPrintTemperature(DeviceAddress deviceAddress)
@@ -586,14 +583,16 @@ void odczytDHT()
     //int(x);
     Serial.print("\t");
     lcd.setCursor(0,0);
-    lcd.print(humidity, 1);
-    lcd.print("%");
+    //lcd.print(humidity, 1);
+    print2digits(humidity);
+    lcd.print("% ");
     Serial.print(humidity, 1);
     Serial.print("\t\t");
     Serial.print(temperature, 1);
     Serial.print("\t\t");
-    lcd.setCursor(0,1);
-    lcd.print(temperature, 1);
+    //lcd.setCursor(0,1);
+    //lcd.print(temperature, 1);
+    print2digits(temperature);
     lcd.print("\`C");
   }
 }
@@ -621,7 +620,7 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
     W.OnWentylator();
    
     lcd.backlight();
-     wyswietlenieCzasu();
+    // wyswietlenieCzasu();
      lcd.clear();
     //digitalWrite(pinRelay2, LOW);
   } else {
@@ -873,10 +872,12 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
                 if (!clock.isReady()){
                     
                 clock.setDateTime(dt.year,dt.month,dt.day,dt.hour,dt.minute,dt.second);
-                lcd.print("zapisano        ");
+                text="zapisano        ";
+                lcd.print(text);
                 }
                 else{
-                  lcd.print(" nie zapisano    ");
+                  text=" nie zapisano    ";
+                  lcd.print(text);
                 }
                 delay(600);
                 
@@ -1200,6 +1201,7 @@ void loopPIR()
          Serial.print("motion detected at ");
          lcd.backlight();
          P.OnPrzekaznik(1);
+         F.UstawStanPIR(1);
          //lcd.setCursor(0, 1); 
          
          //lcd.print(millis()/1000);
@@ -1219,6 +1221,7 @@ void loopPIR()
        if(takeLowTime){
         lowIn = millis();          //save the time of the transition from high to LOW
         takeLowTime = false;       //make sure this is only done at the start of a LOW phase
+        F.UstawStanPIR(1);
         }
        //if the sensor is low for more than the given pause, 
        //we assume that no more motion is going to happen
@@ -1235,6 +1238,7 @@ void loopPIR()
            
            lcd.noBacklight();
            P.OnPrzekaznik(0);
+           F.UstawStanPIR(0);
            delay(50);
            
            
