@@ -72,60 +72,7 @@ class Wentylator{
       }
     }
 };
-/*
-class Przekaznik{
-  protected:
-    boolean OnOff;//info czy  pracuje
-    unsigned long CzasUruchomienia;//czas zalaczenia przekaznika
-    byte pinPrzekaznika;//pin przekaznika 
-    boolean OnStanem;// czy załaczany stanem LOW-0 czy HIGH-1
-  public:
-    void Init(byte pinP,boolean LowHigh){
-      this->pinPrzekaznika=pinP;
-      this->OnOff=false;
-      this->OnStanem=LowHigh;
-    }
-    boolean OnPrzekaznik(){//tryb monostabilny
-      if(!OnOff){
-        digitalWrite(this->pinPrzekaznika,this->OnStanem);
-        this->OnOff=true;
-        CzasUruchomienia=millis();
-        return true;
-        
-      }
-      else{
-        digitalWrite(this->pinPrzekaznika,!(this->OnStanem));
-        this->OnOff=false;
-        return false;
-        
-      }
-    }
-    boolean OnPrzekaznik(boolean On){//tryb bistabilny
-      if(On){
-        digitalWrite(this->pinPrzekaznika,this->OnStanem);
-        this->OnOff=true;
-        CzasUruchomienia=millis();
-        return false;
-        
-      }
-      if(!On){
-        digitalWrite(this->pinPrzekaznika,!(this->OnStanem));
-        this->OnOff=false;
-        return true;
-        
-      }
-    }
-    boolean OffTimePrzekaznik(unsigned long CzasOff){
-      //CzasOff w milisekundach Czas po jakim zostanie wyłączony przekaźnik
-      //wyłacza przekaznik po upływie czasu   
-      if(millis()-(this->CzasUruchomienia)>CzasOff){
-        this->OnPrzekaznik(0);
-        this->CzasUruchomienia=millis();
-      }
-    }
-  
-};
-*/
+
 
 Fotorezystor F;
 // zegar i EEPROM układ Tiny RTC DS1307
@@ -248,13 +195,7 @@ void setup(void)
   Serial.println(text);
   clock.begin();
 
- /* // If date not set
-  if (!clock.isReady())
-  {
-    // Set sketch compiling time
-    clock.setDateTime(__DATE__, __TIME__);
-  }
-  *///wyswietlenie czasu 
+//wyswietlenie czasu 
   wyswietlenieCzasu();
 
 //---------------------
@@ -268,7 +209,7 @@ void setup(void)
    digitalWrite(pinRelayWent, HIGH);
    digitalWrite(pinLED,LOW);
    dht.setup(pinDHT); // data pin 6
-   //text=dht.getModel();
+   
    Serial.println(dht.getModel());
    
    
@@ -403,15 +344,7 @@ void loop(void)
         print2digits(dt.minute);
      // }
    }
-  /*if(F.SprawdzajStanPIR() ){
-    loopPIR();
-  }
-  else{
-    if(F.SprawdzajCiemnosc(PoziomZmierzchu)){
-  
-      loopPIR();
-    }
- }*/
+ 
  loopPIR();
 }
 
@@ -719,7 +652,7 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
         lcd.setCursor(0,0);
         lcd.print("ust.czujnika zmierzchu");
         //Serial.print("MENU:ustawienia cujnika zmierzchu");
-        byte temp_min =  eep.read(8);
+        byte temp_min =  PoziomZmierzchu;
         Serial.println(temp_min);
        // byte temp_sek =  eep.read(12);
         delay(2000);
@@ -737,6 +670,8 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
               delay(250);
               temp_min=temp_min+16;
               //Serial.println(temp_min);
+              lcd.setCursor(0,0);
+              lcd.print(F.PoziomCiemnosciGraf());
               lcd.setCursor(0,1);
               lcd.print(F.PoziomCiemnosciGraf(temp_min));
               
@@ -1143,14 +1078,10 @@ void loopPIR()
          else{
           if(F.SprawdzajCiemnosc(PoziomZmierzchu)){
             P.OnPrzekaznik(1);
+            F.UstawStanPIR(1);
           }
          }
-         /*
-         P.OnPrzekaznik(1);
-         F.UstawStanPIR(1);*/
-         //lcd.setCursor(0, 1); 
          
-         //lcd.print(millis()/1000);
          Serial.print(millis()/1000);
          Serial.println(" sec"); 
          delay(50);
