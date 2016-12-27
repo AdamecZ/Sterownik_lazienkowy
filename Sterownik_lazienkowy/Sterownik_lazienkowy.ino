@@ -5,87 +5,21 @@
 #include <DHT.h>
 #include <DS1307.h>
 #include <AT24Cxx.h>
+#include <Fotorezystor.h>
+#include <Przekaznik.h>
 
 
 // inicjalizacja LCD
 LiquidCrystal_I2C lcd(0x20,4,5,6,0,1,2,3,7,NEGATIVE);  // set the LCD address to 0x20 for a 16 chars and 2 line display
-
-class Fotorezystor{
-  protected:
-    byte lightPin;  //define a pin for Photo resistor
-    uint8_t ciemnosc;
-    boolean StanCiemnosci;
-    boolean StanPIR; // Jeśli PIR wykrył ruch jest true jeżeli zakończył wykrywanie ruchu jest w FALSE;
-  public:
-    void Begin( byte pin){
-      this->lightPin=pin;
-      this->ciemnosc=250;
-      this->StanCiemnosci=false;//false jasno, true ciemno
-      this->StanPIR=false;
-    }
-    boolean SprawdzajStanPIR(){
-      return this->StanPIR;
-    }
-    boolean UstawStanPIR(boolean stan){
-      this->StanPIR=stan;
-      return this->StanPIR;
-    }
-    float Odczyt(){
-      return analogRead(this->lightPin)/4;
-    } 
-    boolean SprawdzajCiemnosc( uint8_t poziomCiemnosci){
-      this->ciemnosc= poziomCiemnosci;
-      if((this->Odczyt()) > this->ciemnosc ){    
-        Serial.println("high");
-        this->StanCiemnosci=true; 
-      }
-      else{
-        this->StanCiemnosci=false;
-        Serial.println("low"); 
-      }
-      return this->StanCiemnosci;  
-    }
-    
-    float PrzeliczNaVolt(){
-      float v=this->Odczyt()*5/255;
-      Serial.println(v);
-      return v;
-    }
-    uint8_t PoziomCiemnosciGraf(){
-      byte znak=221;
-      int poziom=this->Odczyt()/16;
-      for (byte l=0;l<=16;l++){
-        //Serial.print((char)221);
-       // Serial.print("|");
-       if(l<=poziom){
-        znak=0xFF;
-       }
-       else{
-        znak=32;
-       }
-       lcd.print((char)znak);
-      }
-      //Serial.println(" ");
-      return poziom;
-    }
-    uint8_t PoziomCiemnosciGraf(byte poziom){
-      byte znak=221;
-      
-      for (byte l=0;l<=16;l++){
-        //Serial.print((char)221);
-       // Serial.print("|");
-       if(l<=poziom){
-        znak=0xFF;
-       }
-       else{
-        znak=32;
-       }
-       lcd.print((char)znak);
-      }
-      //Serial.println(" ");
-      return poziom;
-    }
-    
+byte customChar[8] = {
+  0b01000,
+  0b10100,
+  0b01000,
+  0b00011,
+  0b00100,
+  0b00100,
+  0b00100,
+  0b00011
 };
 
 class Wentylator{
@@ -138,7 +72,7 @@ class Wentylator{
       }
     }
 };
-
+/*
 class Przekaznik{
   protected:
     boolean OnOff;//info czy  pracuje
@@ -191,7 +125,7 @@ class Przekaznik{
     }
   
 };
-
+*/
 
 Fotorezystor F;
 // zegar i EEPROM układ Tiny RTC DS1307
@@ -216,7 +150,7 @@ Wentylator W;
 #define pinLED 13// dioda LED
 
 char* text;
-char* Menu[]={"temperatura     ","Histereza wentyl","wentylator      ","czujnik ruchu   ","ust.daty i czasu","Stan baterii RTC","Czujnik zmierzchu ","koniec          "};
+char* Menu[]={"temperatura     ","Histereza wentyl","wentylator      ","czujnik ruchu   ","ust.daty i czasu",/*"Stan baterii RTC",*/"Czujnik zmierzchu ","koniec          "};
 // inicjalizacja DHT 22 czujnik wilgoci
 DHT dht;
 
@@ -307,6 +241,7 @@ void setup(void)
    Serial.println(text);
    lcd.begin(16,2);                      // initialize the lcd 
    lcd.backlight();
+   lcd.createChar(0, customChar);
   
   P.Init(pinRelayLight,0);
    text="Initialize DS1307";
@@ -325,7 +260,7 @@ void setup(void)
 //---------------------
    pinMode (pinButtonNext,INPUT_PULLUP);// pin 4 dla przycisku podłaczonego do GND
    pinMode (pinButtonOK,INPUT_PULLUP);// pin 8 dla przycisku podłaczonego do GND
-   pinMode(pinRelayLight, OUTPUT);//pin przekaźnika automat z PIR
+   //pinMode(pinRelayLight, OUTPUT);//pin przekaźnika automat z PIR
    pinMode(pinRelayWent,OUTPUT);//pin przekaźnika przycisku  
    pinMode(pirPin, INPUT);//sekcja czujnika PIR
    pinMode(pinLED,OUTPUT);//dioda LED sygnalizacyjna
@@ -468,7 +403,7 @@ void loop(void)
         print2digits(dt.minute);
      // }
    }
-  if(F.SprawdzajStanPIR() ){
+  /*if(F.SprawdzajStanPIR() ){
     loopPIR();
   }
   else{
@@ -476,7 +411,8 @@ void loop(void)
   
       loopPIR();
     }
-  }
+ }*/
+ loopPIR();
 }
 
 //urzywane do wyswietlania czasu zmienia wyswietlane liczby na 2cyfrowe
@@ -511,8 +447,8 @@ void OdczytTemperaturDS18B20(){
     
       lcd.setCursor(10,i);
       lcd.print(GetToPrintTemperature(tempDeviceAddress));
-      text="\`C  ";
-      lcd.print(text);
+      text=" ";
+      lcd.print((char)0);lcd.print(text);
     
     
     } 
@@ -583,17 +519,18 @@ void odczytDHT()
     //int(x);
     Serial.print("\t");
     lcd.setCursor(0,0);
-    //lcd.print(humidity, 1);
-    print2digits(humidity);
+    lcd.print(humidity, 1);
+    //print2digits(humidity);
     lcd.print("% ");
     Serial.print(humidity, 1);
     Serial.print("\t\t");
     Serial.print(temperature, 1);
     Serial.print("\t\t");
     //lcd.setCursor(0,1);
-    //lcd.print(temperature, 1);
-    print2digits(temperature);
-    lcd.print("\`C");
+    lcd.print(temperature, 1);
+    //print2digits(temperature);
+    text=" ";
+    lcd.print((char)0);lcd.print(text);
   }
 }
 
@@ -776,7 +713,7 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
         break;
         }
         //Czujnik zmierzchu
-        case 6:{ 
+        case 5:{ 
           
         lcd.clear();
         lcd.setCursor(0,0);
@@ -788,38 +725,38 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
         delay(2000);
         lcd.clear();
         lcd.setCursor(0,0);
-        F.PoziomCiemnosciGraf();
+        lcd.print(F.PoziomCiemnosciGraf());
         //lcd.print(temp_min);
         lcd.setCursor(0,1);
-        F.PoziomCiemnosciGraf(temp_min);
+        lcd.print(F.PoziomCiemnosciGraf(temp_min));
         byte tempKoniec=0;
         while(tempKoniec<1){
          
           
             if (digitalRead(pinButtom) == LOW){
               delay(250);
-              temp_min++;
+              temp_min=temp_min+16;
               //Serial.println(temp_min);
               lcd.setCursor(0,1);
-              F.PoziomCiemnosciGraf(temp_min);
+              lcd.print(F.PoziomCiemnosciGraf(temp_min));
               
               
-              if(temp_min>16){
+              if(temp_min>255){
                 temp_min=1;
                 lcd.clear();
                 lcd.setCursor(0,0);
-                F.PoziomCiemnosciGraf();
+                lcd.print(F.PoziomCiemnosciGraf());
                 lcd.setCursor(0,1);
-                F.PoziomCiemnosciGraf(temp_min);
+                lcd.print(F.PoziomCiemnosciGraf(temp_min));
               }
             }
               if (digitalRead(pinButtom2) == LOW){
                 delay(250);
-                eep.update(8,temp_min);
+                eep.update(8,(temp_min));
                 //Serial.println("zapisano EEPROM");
                 tempKoniec=1;
                 lcd.setCursor(0,0);
-                PoziomZmierzchu=temp_min;
+                PoziomZmierzchu=(temp_min);
                 lcd.print("zapisano        ");
                 delay(600);
                 koniec=1;
@@ -869,16 +806,16 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
                 delay(250);
                 tempKoniec=1;
                 lcd.setCursor(0,0);
-                if (!clock.isReady()){
+                //if (!clock.isReady()){
                     
                 clock.setDateTime(dt.year,dt.month,dt.day,dt.hour,dt.minute,dt.second);
                 text="zapisano        ";
                 lcd.print(text);
-                }
+                /*}
                 else{
                   text=" nie zapisano    ";
                   lcd.print(text);
-                }
+                }*/
                 delay(600);
                 
               }
@@ -1096,7 +1033,7 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
           
          }
         break;
-        }
+        }/*
         //stan baterii RTC DS1307
         case 5:{
           float batteryVoltageRead = analogRead (A0);
@@ -1125,9 +1062,9 @@ void MenuSystem(byte pinButtom,byte pinButtom2, byte pinLed,byte pinRelay2)
             }
           }
           break;
-        }
+        }*/
         //koniec wyjscie z menu
-        case 7:{
+        case 6:{
         //lcd.clear();
         lcd.setCursor(0,0);
         lcd.print("wyjscie         ");
@@ -1200,8 +1137,17 @@ void loopPIR()
          Serial.println("---");
          Serial.print("motion detected at ");
          lcd.backlight();
+         if(F.SprawdzajStanPIR() ){
+          P.OnPrzekaznik(1);
+          }
+         else{
+          if(F.SprawdzajCiemnosc(PoziomZmierzchu)){
+            P.OnPrzekaznik(1);
+          }
+         }
+         /*
          P.OnPrzekaznik(1);
-         F.UstawStanPIR(1);
+         F.UstawStanPIR(1);*/
          //lcd.setCursor(0, 1); 
          
          //lcd.print(millis()/1000);
@@ -1234,7 +1180,7 @@ void loopPIR()
          
            //lcd.print("ended");
            Serial.print((millis() - pause)/1000);
-           Serial.println(" sec");
+          Serial.println(" sec");
            
            lcd.noBacklight();
            P.OnPrzekaznik(0);
